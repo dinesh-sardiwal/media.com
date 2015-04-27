@@ -15,7 +15,7 @@ function custom_permission() {
   );
 }
 
-/*
+/**
  * Implements of hook_menu().
  */
 function custom_menu(){
@@ -27,12 +27,175 @@ function custom_menu(){
     'access arguments' => array('admin user active page'),
     'type' => MENU_CALLBACK,
   );
+
+  $itmes['members-movies'] = array(
+    'title' => t('Member Movies List'),
+    'page callback' => 'member_movies_list',
+    'access arguments' => array('admin user active page'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $itmes['members-songs'] = array(
+    'title' => t('Member Songs List'),
+    'page callback' => 'member_songs_list',
+    'access arguments' => array('admin user active page'),
+    'type' => MENU_CALLBACK,
+  );
   return $itmes;
 }
 
-/*
+/**
  * Member information Callback.
  */
 function active_users_list() {
+
+  $users = entity_load('user');
+  $userdata = array();
+  $rows = array();
+
+  // ignore uid 0 and 1.
+  $ignore_uid = array(0, 1);
+
+  $i = 1;
+  foreach ($users as $user_id => $user_data) {
+    if(!in_array($user_id, $ignore_uid)) {
+      $userdata[$user_id] = array(
+        $i,
+        field_key_check($user_data, 'field_first_name'),
+        field_key_check($user_data, 'field_last_name'),
+        field_key_check($user_data, 'field_sex'),
+        l('view', "members-movies/$user_id"),
+        l('view', "members-songs/$user_id"),
+      );
+      $i++;
+    }
+  }
+
+  // Table Header. 
+  $header = array(
+    'S/No',
+    array('data' => 'First Name','field' => 'field_first_name','sort' => 'ASC'),
+    array('data' => 'Last Name','field' => 'field_last_name','sort' => 'ASC'),
+    array('data' => 'Sex', 'field' => 'field_sex','sort' => 'ASC'),
+    'View all Movies',
+    'View all Songs'
+  );
+
+  $output = theme('table', array(
+    'header' => $header,
+    'rows' => $userdata,
+    )
+  );
+
+  return $output;
+}
+
+/**
+ * Member Movies List callback.
+ * member_movies_list().
+ */
+function member_movies_list() {
+
+  $user_uid = arg(1);
+
+  $query = new EntityFieldQuery;
+
+  $result = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'movie_information')
+    ->propertyCondition('uid', $user_uid)
+    ->execute();
+  $rows = array();
+  if (isset($result['node'])) {
+    $i = 1;
+    
+    $nids = array_keys($result['node']);
+    $nodes = node_load_multiple($nids);
+
+    foreach ($nodes as $key => $value) {
+      $rows[$value->nid] = array(
+        $i,
+        $value->title,
+        field_key_check($value, 'body'),
+        field_key_check($value, 'field_movie_rates'),
+      );
+    }
+    $i++;
+  }
+
+  // Table Header. 
+  $header = array(
+    'S/No',
+    array('data' => 'Movie name ','field' => 'field_first_name','sort' => 'ASC'),
+    array('data' => 'Movie Rates ','field' => 'field_last_name','sort' => 'ASC'),
+    array('data' => 'Description ', 'field' => 'field_sex','sort' => 'ASC'),
+  );
+
+  $output = theme('table', array(
+    'header' => $header,
+    'rows' => $rows,
+    )
+  );
+
+  return $output;
+
+}
+
+/**
+ * Member Songs List callback.
+ * member_songs_list().
+ */
+function member_songs_list() {
+
+  $user_uid = arg(1);
+
+  $query = new EntityFieldQuery;
+
+  $result = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'songs_information')
+    ->propertyCondition('uid', $user_uid)
+    ->execute();
+  $rows = array();
+  if (isset($result['node'])) {
+       $stories = $result['node'];
+    $i = 1;
+    
+    $nids = array_keys($result['node']);
+    $nodes = node_load_multiple($nids);
+
+    foreach ($nodes as $key => $value) {
+      $rows[$value->nid] = array(
+        $i,
+        '',
+        $value->title,
+      );
+    }
+    $i++;
+  }
+
+  // Table Header. 
+  $header = array(
+    'S/No',
+    'Movie',
+    'Song Name',
+    'Movie Rates',
+    'Five star rating',
+  );
+
+  $output = theme('table', array(
+    'header' => $header,
+    'rows' => $rows,
+    )
+  );
+
+  return $output;
   
 }
+
+/*
+ * field value check.
+ */
+function field_key_check($object, $field_key) {
+  $object_clone = $object->$field_key;
+  return $object->$field_key ? $object_clone['und'][0]['value'] : '';
+}
+

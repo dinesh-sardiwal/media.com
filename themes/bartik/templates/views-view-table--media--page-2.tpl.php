@@ -29,7 +29,7 @@
         <?php foreach ($header as $field => $label): ?>
           <th <?php if ($header_classes[$field]) { print 'class="'. $header_classes[$field] . '" '; } ?>>
             <?php if ($field =='title') { ?>
-              <img src="sites/default/files/music_icon.jpg" width='16px' height='16px'/><?php print $label;
+              <img src="themes/bartik/images/music_icon.jpg" width='16px' height='16px'/><?php print $label;
             } else { ?>
                 <?php print $label;
             }
