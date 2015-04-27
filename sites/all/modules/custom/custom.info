@@ -1,0 +1,6 @@
+name = custom
+core = 7.x
+description = Add Cusotm Utilite
+
+package = custom
+version = 7.x.1beta
