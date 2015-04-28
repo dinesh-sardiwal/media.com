@@ -45,7 +45,8 @@ function custom_menu(){
 
   $itmes['media-detail'] = array(
     'title' => t('Media Details'),
-    'page callback' => 'custom_media_details',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('custom_media_details'),
     'access arguments' => array('admin user active page'),
     'type' => MENU_CALLBACK,
   );
@@ -59,30 +60,73 @@ function custom_menu(){
 function active_users_list() {
 
   $form = array();
-
+  $i = 1;
   $field_sex = field_info_field('field_sex');
   $sex_options_values = list_allowed_values($field_sex); 
+  array_unshift($sex_options_values, "-Select");
+  extract($_GET);
 
-  $users = entity_load('user');
-  
-  $userdata = array();
-
-  // Table Header. 
+  //drupal_set_message('<pre>'.print_r($sex_options_values,TRUE));  
+   // Table Header. 
   $header = array(
     'S/No',
-    array('data' => 'First Name','field' => 'field_first_name','sort' => 'ASC'),
-    array('data' => 'Last Name','field' => 'field_last_name','sort' => 'ASC'),
-    array('data' => 'Sex', 'field' => 'field_sex','sort' => 'ASC'),
+    array('data' => 'First Name','field' => 'fn.field_first_name_value','sort' => 'ASC'),
+    array('data' => 'Last Name','field' => 'field_last_name_value','sort' => 'ASC'),
+    array('data' => 'Sex', 'field' => 'sex.field_sex_value','sort' => 'ASC'),
     'View all Movies',
     'View all Songs'
   );
 
+  //$users = entity_load('user');
+  
+  $userdata = array();
+
+  //Custom Query 
+
+  $query = db_select('users','u')->extend('TableSort');
+    $query->join('field_data_field_first_name', 'fn', 'u.uid = fn.entity_id');
+    $query->join('field_data_field_last_name', 'ln', 'u.uid = ln.entity_id');
+    $query->join('field_data_field_sex', 'sex', 'u.uid = sex.entity_id');
+    $query->fields('fn',array('field_first_name_value'));
+    $query->fields('ln',array('field_last_name_value'));
+    $query->fields('u',array('uid'));
+    $query->fields('sex',array('field_sex_value'));
+    $query->condition('u.uid', 0,'!=');
+    $query->condition('u.uid', 1,'!=');
+
+    if (isset($first_name) || isset($last_name) ) {
+      $query->condition('fn.field_first_name_value', '%' . db_like($first_name) . '%', 'LIKE');
+      $query->condition('ln.field_last_name_value', '%' . db_like($last_name) . '%', 'LIKE');
+      $query->condition('sex.field_sex_value', $sex,'=');
+  
+    }
+    
+    $query->orderBy('fn.field_first_name_value', 'ASC');//ORDER BY created
+    $query->orderBy('ln.field_last_name_value', 'ASC');//ORDER BY created
+    $query->orderBy('sex.field_sex_value', 'ASC');//ORDER BY created
+    $result = $query->extend('PagerDefault')
+              ->limit(10)
+              ->orderByHeader($header)
+              ->execute()
+              ->fetchAll();
+
+  foreach ($result as $row) {
+    $user_load = user_load($row->uid);
+    $userdata[$row->uid] = array(
+        $i,
+        $row->field_first_name_value,
+        $row->field_last_name_value,
+        $row->field_sex_value,
+        users_rolewise_link($user_load, 'members-movies'),
+        users_rolewise_link($user_load, 'members-songs'),
+      );
+    $i++;
+  }
+ 
+
   // ignore uid 0 and 1.
   $ignore_uid = array(0, 1);
-
-  $i = 1;
-  /*$query = db_query("select fn.field_first_name_value,ln.field_last_name_value,sex.field_sex_value,u.uid from users as u left join field_data_field_first_name as fn on (u.uid = fn.entity_id) left join field_data_field_last_name as ln on (u.uid = ln.entity_id) left join field_data_field_sex as sex on (u.uid = sex.entity_id) where u.uid !=0 and u.uid !=1 ");*/
-
+  /*
   foreach ($users as $user_id => $user_data) {
     if(!in_array($user_id, $ignore_uid)) {
       $userdata[$user_id] = array(
@@ -97,7 +141,7 @@ function active_users_list() {
       //drupal_set_message('<pre>'.print_r($user_data,TRUE));
     }
   }
-
+*/
   $form['first_name'] = array(
     '#type' => 'textfield',
     '#title' => t('First Name'),
@@ -135,6 +179,27 @@ function active_users_list() {
   );*/
 
   return $form;
+}
+
+/**
+ *
+ */
+function active_users_list_submit($form,&$form_state) {
+  $values = $form_state['values'];
+  $first_name = $values['first_name'];
+  $last_name = $values['last_name'];
+  $sex = $values['sex'];
+  
+  $form_state['redirect'] = array(
+    'members-info',
+    array(
+      'query' => array(
+        'first_name' => $first_name,
+        'last_name' => $last_name,
+        'sex' => $sex,
+      ),
+    ),
+  );
 }
 
 /**
@@ -342,6 +407,11 @@ function users_rolewise_link($user_object, $link) {
 function custom_media_details() {
   $output = '';
 
+  $form = array();
+  $i = 1;
+  $movies_array = array();
+  extract($_GET);
+  
    // Table Header. 
   $header = array(
     'S/No',
@@ -352,13 +422,24 @@ function custom_media_details() {
   );
 
   $query = new EntityFieldQuery;
+
+  $movies = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'movie_information')
+    ->execute();
+  $movies_nid = array_keys($movies['node']);
+  $movies_node = node_load_multiple($movies_nid);
+
+  foreach($movies_node as $movies_key => $movies_result) {
+    $movies_array[$movies_result->nid] = $movies_result->title;
+  }
+
   $result = $query->entityCondition('entity_type', 'node')
     ->entityCondition('bundle', 'songs_information')
     ->execute();
 
   $nids = array_keys($result['node']);
   $nodes = node_load_multiple($nids);
-  $i = 1;
+
   foreach ($nodes as $key => $value) {
     $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
     $movies_object = node_load($movies_nid);
@@ -388,5 +469,37 @@ function custom_media_details() {
     )
   );
 
-  return $output;
+  $form['song_name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Song Name'),
+    '#default_value' => '',
+  );
+
+  $form['movies'] = array(
+    '#type' => 'select',
+    '#title' => t('Movies'),
+    '#options' => $movies_array,
+  );
+
+  $form['fivestar'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Five star rating'),
+    '#default_value' => '',
+  );
+ 
+
+  $form['table'] = array(
+    '#theme' => 'table',
+    '#title' => t('Registered User list'),
+    '#header' => $header,
+    '#rows' => $rows,
+    '#empty' => t('No Records.'),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+
+  return $form;
 }
