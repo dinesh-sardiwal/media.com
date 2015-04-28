@@ -23,24 +23,33 @@ function custom_menu(){
 
   $itmes['members-info'] = array(
     'title' => t('Registered Member List'),
-    'page callback' => 'active_users_list',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('active_users_list'),
     'access arguments' => array('admin user active page'),
     'type' => MENU_CALLBACK,
   );
 
-  $itmes['members-movies'] = array(
+  $itmes['members-movies/%/%'] = array(
     'title' => t('Member Movies List'),
     'page callback' => 'member_movies_list',
     'access arguments' => array('admin user active page'),
     'type' => MENU_CALLBACK,
   );
 
-  $itmes['members-songs'] = array(
+  $itmes['members-songs/%/%'] = array(
     'title' => t('Member Songs List'),
     'page callback' => 'member_songs_list',
     'access arguments' => array('admin user active page'),
     'type' => MENU_CALLBACK,
   );
+
+  $itmes['media-detail'] = array(
+    'title' => t('Media Details'),
+    'page callback' => 'custom_media_details',
+    'access arguments' => array('admin user active page'),
+    'type' => MENU_CALLBACK,
+  );
+
   return $itmes;
 }
 
@@ -49,27 +58,14 @@ function custom_menu(){
  */
 function active_users_list() {
 
+  $form = array();
+
+  $field_sex = field_info_field('field_sex');
+  $sex_options_values = list_allowed_values($field_sex); 
+
   $users = entity_load('user');
+  
   $userdata = array();
-  $rows = array();
-
-  // ignore uid 0 and 1.
-  $ignore_uid = array(0, 1);
-
-  $i = 1;
-  foreach ($users as $user_id => $user_data) {
-    if(!in_array($user_id, $ignore_uid)) {
-      $userdata[$user_id] = array(
-        $i,
-        field_key_check($user_data, 'field_first_name'),
-        field_key_check($user_data, 'field_last_name'),
-        field_key_check($user_data, 'field_sex'),
-        l('view', "members-movies/$user_id"),
-        l('view', "members-songs/$user_id"),
-      );
-      $i++;
-    }
-  }
 
   // Table Header. 
   $header = array(
@@ -81,13 +77,64 @@ function active_users_list() {
     'View all Songs'
   );
 
-  $output = theme('table', array(
+  // ignore uid 0 and 1.
+  $ignore_uid = array(0, 1);
+
+  $i = 1;
+  /*$query = db_query("select fn.field_first_name_value,ln.field_last_name_value,sex.field_sex_value,u.uid from users as u left join field_data_field_first_name as fn on (u.uid = fn.entity_id) left join field_data_field_last_name as ln on (u.uid = ln.entity_id) left join field_data_field_sex as sex on (u.uid = sex.entity_id) where u.uid !=0 and u.uid !=1 ");*/
+
+  foreach ($users as $user_id => $user_data) {
+    if(!in_array($user_id, $ignore_uid)) {
+      $userdata[$user_id] = array(
+        $i,
+        field_key_check($user_data, 'field_first_name'),
+        field_key_check($user_data, 'field_last_name'),
+        field_key_check($user_data, 'field_sex'),
+        users_rolewise_link($user_data, 'members-movies'),
+        users_rolewise_link($user_data, 'members-songs'),
+      );
+      $i++;
+      //drupal_set_message('<pre>'.print_r($user_data,TRUE));
+    }
+  }
+
+  $form['first_name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('First Name'),
+    '#default_value' => '',
+  );
+
+  $form['last_name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Last Name'),
+    '#default_value' => '',
+  );
+
+  $form['sex'] = array(
+    '#type' => 'select',
+    '#title' => t('Sex'),
+    '#options' => $sex_options_values,
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+
+  $form['table'] = array(
+    '#theme' => 'table',
+    '#title' => t('Registered User list'),
+    '#header' => $header,
+    '#rows' => $userdata,
+    '#empty' => t('No Records.'),
+  );
+  /*$output = theme('table', array(
     'header' => $header,
     'rows' => $userdata,
     )
-  );
+  );*/
 
-  return $output;
+  return $form;
 }
 
 /**
@@ -96,14 +143,9 @@ function active_users_list() {
  */
 function member_movies_list() {
 
-  $user_uid = arg(1);
+  // Query Build
+  $result = custom_query_build('movie_information');
 
-  $query = new EntityFieldQuery;
-
-  $result = $query->entityCondition('entity_type', 'node')
-    ->entityCondition('bundle', 'movie_information')
-    ->propertyCondition('uid', $user_uid)
-    ->execute();
   $rows = array();
   if (isset($result['node'])) {
     $i = 1;
@@ -115,8 +157,8 @@ function member_movies_list() {
       $rows[$value->nid] = array(
         $i,
         $value->title,
-        field_key_check($value, 'body'),
         field_key_check($value, 'field_movie_rates'),
+        field_key_check($value, 'body'),
       );
     }
     $i++;
@@ -129,6 +171,10 @@ function member_movies_list() {
     array('data' => 'Movie Rates ','field' => 'field_last_name','sort' => 'ASC'),
     array('data' => 'Description ', 'field' => 'field_sex','sort' => 'ASC'),
   );
+
+  if (empty($rows)) {
+    $rows = array('empty'=>array('Sorry No Result Found'));
+  }
 
   $output = theme('table', array(
     'header' => $header,
@@ -146,15 +192,11 @@ function member_movies_list() {
  */
 function member_songs_list() {
 
-  $user_uid = arg(1);
+  // Query Build
+  $result = custom_query_build('songs_information');
 
-  $query = new EntityFieldQuery;
-
-  $result = $query->entityCondition('entity_type', 'node')
-    ->entityCondition('bundle', 'songs_information')
-    ->propertyCondition('uid', $user_uid)
-    ->execute();
   $rows = array();
+  
   if (isset($result['node'])) {
        $stories = $result['node'];
     $i = 1;
@@ -163,11 +205,20 @@ function member_songs_list() {
     $nodes = node_load_multiple($nids);
 
     foreach ($nodes as $key => $value) {
+      $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
+      $movies_object = node_load($movies_nid);
+
+      $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
+        'label'=>'hidden',));
+      
       $rows[$value->nid] = array(
         $i,
-        '',
+        $movies_object->title,
         $value->title,
+        field_key_check($movies_object, 'field_movie_rates'),
+        render($fivestar),
       );
+     //drupal_set_message('<pre>'.print_r($fivestar,TRUE));
     }
     $i++;
   }
@@ -181,9 +232,14 @@ function member_songs_list() {
     'Five star rating',
   );
 
+  if (empty($rows)) {
+    $rows = array('empty'=>array('Sorry No Result Found'));
+  }
+
   $output = theme('table', array(
     'header' => $header,
     'rows' => $rows,
+    'sticky' => TRUE,
     )
   );
 
@@ -191,11 +247,146 @@ function member_songs_list() {
   
 }
 
-/*
- * field value check.
+/**
+ * Field value check.
  */
 function field_key_check($object, $field_key) {
   $object_clone = $object->$field_key;
   return $object->$field_key ? $object_clone['und'][0]['value'] : '';
 }
 
+/**
+ * argument based generate query.
+ * custom_query_build().
+ */
+function custom_query_build($bundle_name) {
+  $arg = arg(1);
+  $user_uid = arg(2);
+
+  $query = new EntityFieldQuery;
+
+  switch ($arg) {
+    case 'actor':
+      $result = $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', $bundle_name)
+        ->fieldCondition('field_actor', 'uid', $user_uid, '=')
+        ->execute();
+      break;
+
+    case 'actress':
+      $result = $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', $bundle_name)
+        ->fieldCondition('field_actress', 'uid', $user_uid, '=')
+        ->execute();
+      break;
+
+    case 'producer':
+      $result = $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', $bundle_name)
+        ->fieldCondition('field_producer', 'uid', $user_uid, '=')
+        ->execute();
+      break;
+
+    case 'director':
+      $result = $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', $bundle_name)
+        ->fieldCondition('field_director', 'uid', $user_uid, '=')
+        ->execute();
+      break;
+    
+  }
+
+  return $result;
+}
+
+/**
+ * User role check and make a link for all movies.
+ */
+function users_rolewise_link($user_object, $link) {
+
+  $director = array_search('director', $user_object->roles);
+  $producer = array_search('producer', $user_object->roles);
+  $actor = array_search('actor', $user_object->roles);
+  $actress = array_search('actress', $user_object->roles);
+
+  if($actor == TRUE) {
+    $link = l(t('View'), "$link/actor/$user_object->uid", array(
+    'attributes' => array(
+    'target' => '_blank')));
+  }
+
+  if($actress == TRUE) {
+    $link = l(t('View'), "$link/actress/$user_object->uid", array(
+    'attributes' => array(
+    'target' => '_blank')));
+  }
+
+  if($producer == TRUE) {
+    $link = l(t('View'), "$link/producer/$user_object->uid", array(
+    'attributes' => array(
+    'target' => '_blank')));
+  }
+
+  if($director == TRUE) {
+   $link = l(t('View'), "$link/director/$user_object->uid",array(
+    'attributes' => array(
+    'target' => '_blank')));
+  }
+
+  return $link;
+}
+
+/**
+ * Media Details Callback.
+ */
+function custom_media_details() {
+  $output = '';
+
+   // Table Header. 
+  $header = array(
+    'S/No',
+    'Song Name',
+    'Movies',
+    'Movie description',
+    'Five star rating',
+  );
+
+  $query = new EntityFieldQuery;
+  $result = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'songs_information')
+    ->execute();
+
+  $nids = array_keys($result['node']);
+  $nodes = node_load_multiple($nids);
+  $i = 1;
+  foreach ($nodes as $key => $value) {
+    $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
+    $movies_object = node_load($movies_nid);
+
+    $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
+      'label'=>'hidden',));
+    
+    $rows[$value->nid] = array(
+      $i,
+      $value->title,
+      $movies_object->title,
+      field_key_check($movies_object, 'body'),
+      render($fivestar),
+    );
+    $i++;
+   //drupal_set_message('<pre>'.print_r($fivestar,TRUE));
+  }
+
+  if (empty($rows)) {
+    $rows = array('empty'=>array('Sorry No Result Found'));
+  }
+
+  $output = theme('table', array(
+    'header' => $header,
+    'rows' => $rows,
+    'sticky' => TRUE,
+    )
+  );
+
+  return $output;
+}
