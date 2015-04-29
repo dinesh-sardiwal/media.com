@@ -1,5 +1,5 @@
 <?php
-/*
+/**
  * Custom module file.
  */
 
@@ -66,7 +66,6 @@ function active_users_list() {
   array_unshift($sex_options_values, "-Select");
   extract($_GET);
 
-  //drupal_set_message('<pre>'.print_r($sex_options_values,TRUE));  
    // Table Header. 
   $header = array(
     'S/No',
@@ -101,9 +100,9 @@ function active_users_list() {
   
     }
     
-    $query->orderBy('fn.field_first_name_value', 'ASC');//ORDER BY created
-    $query->orderBy('ln.field_last_name_value', 'ASC');//ORDER BY created
-    $query->orderBy('sex.field_sex_value', 'ASC');//ORDER BY created
+    // $query->orderBy('fn.field_first_name_value', 'ASC');//ORDER BY created
+    // $query->orderBy('ln.field_last_name_value', 'ASC');//ORDER BY created
+    // $query->orderBy('sex.field_sex_value', 'ASC');//ORDER BY created
     $result = $query->extend('PagerDefault')
               ->limit(10)
               ->orderByHeader($header)
@@ -125,7 +124,7 @@ function active_users_list() {
  
 
   // ignore uid 0 and 1.
-  $ignore_uid = array(0, 1);
+  //$ignore_uid = array(0, 1);
   /*
   foreach ($users as $user_id => $user_data) {
     if(!in_array($user_id, $ignore_uid)) {
@@ -263,7 +262,7 @@ function member_songs_list() {
   $rows = array();
   
   if (isset($result['node'])) {
-       $stories = $result['node'];
+    $stories = $result['node'];
     $i = 1;
     
     $nids = array_keys($result['node']);
@@ -298,7 +297,11 @@ function member_songs_list() {
   );
 
   if (empty($rows)) {
-    $rows = array('empty'=>array('Sorry No Result Found'));
+    $rows = array(
+      'empty' => array(
+        'Sorry No Result Found',
+      )
+    );
   }
 
   $output = theme('table', array(
@@ -405,24 +408,44 @@ function users_rolewise_link($user_object, $link) {
  * Media Details Callback.
  */
 function custom_media_details() {
-  $output = '';
 
   $form = array();
   $i = 1;
-  $movies_array = array();
+  $movies_array = array(''=>'select');
   extract($_GET);
   
    // Table Header. 
   $header = array(
-    'S/No',
-    'Song Name',
-    'Movies',
-    'Movie description',
-    'Five star rating',
+    'Sr. No.',
+    'Song Name' => array(
+      'data' => '<img src="themes/bartik/images/music_icon.jpg" width="16px" height="16px" /> Song Name',
+      'type' => 'property',
+      'specifier' => 'title',
+    ),
+    'Movie' => array(
+      'data' => t('Movie'),
+      'type' => 'field',
+      'specifier' => array(
+        'field' => 'field_movies',
+        'column' => 'nid',
+      ),
+    ),
+    'Movie description' => array(
+      'data' => t('Movie description'),
+    ),
+    'Five star rating' => array(
+      'data' => t('Five star rating'),
+      'type' => 'field',
+      'specifier' => array(
+        'field' => 'field_five_star_rating',
+        'column' => 'rating',
+      ),
+    ),
   );
 
   $query = new EntityFieldQuery;
 
+  // Get list of movies node 
   $movies = $query->entityCondition('entity_type', 'node')
     ->entityCondition('bundle', 'movie_information')
     ->execute();
@@ -433,73 +456,105 @@ function custom_media_details() {
     $movies_array[$movies_result->nid] = $movies_result->title;
   }
 
+  // Query Build
   $result = $query->entityCondition('entity_type', 'node')
-    ->entityCondition('bundle', 'songs_information')
-    ->execute();
+    ->entityCondition('bundle', 'songs_information');
 
-  $nids = array_keys($result['node']);
-  $nodes = node_load_multiple($nids);
+  if (isset($movies_value_nid) && !empty($movies_value_nid)) {
+    $query->fieldCondition('field_movies', 'nid', $movies_value_nid);
+  }
 
-  foreach ($nodes as $key => $value) {
-    $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
-    $movies_object = node_load($movies_nid);
+  if (isset($song_name) && !empty($song_name)) {
+    $query->propertyCondition('title', '%'. $song_name . '%', 'LIKE');
+  }
 
-    $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
+  if (isset($fivestar_rating) && !empty($fivestar_rating)) {
+    $query->fieldCondition('field_five_star_rating', 'rating', $fivestar_rating);
+  }
+
+  $query->tableSort($header);
+  $result = $result->execute();
+
+  if (!empty($result)) {
+    $nids = array_keys($result['node']);
+    $nodes = node_load_multiple($nids);
+    foreach ($nodes as $key => $value) {
+
+      $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
+      $movies_object = node_load($movies_nid);
+      $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
       'label'=>'hidden',));
-    
-    $rows[$value->nid] = array(
-      $i,
-      $value->title,
-      $movies_object->title,
-      field_key_check($movies_object, 'body'),
-      render($fivestar),
-    );
-    $i++;
-   //drupal_set_message('<pre>'.print_r($fivestar,TRUE));
+
+      $rows[$value->nid] = array(
+        $i,
+        $value->title,
+        $movies_object->title,
+        field_key_check($movies_object, 'body'),
+        render($fivestar),
+      );
+      $i++;
+    }
   }
 
   if (empty($rows)) {
     $rows = array('empty'=>array('Sorry No Result Found'));
   }
 
-  $output = theme('table', array(
-    'header' => $header,
-    'rows' => $rows,
-    'sticky' => TRUE,
-    )
-  );
-
   $form['song_name'] = array(
     '#type' => 'textfield',
     '#title' => t('Song Name'),
     '#default_value' => '',
+    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();')
   );
 
   $form['movies'] = array(
     '#type' => 'select',
     '#title' => t('Movies'),
     '#options' => $movies_array,
+    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
   );
 
   $form['fivestar'] = array(
     '#type' => 'textfield',
     '#title' => t('Five star rating'),
     '#default_value' => '',
-  );
- 
-
-  $form['table'] = array(
-    '#theme' => 'table',
-    '#title' => t('Registered User list'),
-    '#header' => $header,
-    '#rows' => $rows,
-    '#empty' => t('No Records.'),
+    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
   );
 
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Submit'),
+    '#attributes' => array('style' => 'display:none;'),
+  );
+
+  $form['table'] = array(
+    '#theme' => 'table',
+    '#title' => t('Media Details'),
+    '#header' => $header,
+    '#rows' => $rows,
+    '#empty' => t('No Records.'),
   );
 
   return $form;
+}
+
+/**
+ * Media Detail Page Callback.
+ */
+function custom_media_details_submit($form, &$form_state) {
+  $values =  $form_state['values'];
+  $song_name = $values['song_name'];
+  $movies_nid = $values['movies'];
+  $fivestar_rating = $values['fivestar'];
+
+  $form_state['redirect'] = array(
+    'media-detail',
+    array(
+      'query' => array(
+        'song_name' => $song_name,
+        'movies_value_nid' => $movies_nid,
+        'fivestar_rating' => $fivestar_rating,
+      ),
+    ),
+  );
 }
