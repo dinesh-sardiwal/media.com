@@ -69,60 +69,72 @@ function active_users_list() {
    // Table Header. 
   $header = array(
     'S/No',
-    array('data' => 'First Name','field' => 'fn.field_first_name_value','sort' => 'ASC'),
-    array('data' => 'Last Name','field' => 'field_last_name_value','sort' => 'ASC'),
-    array('data' => 'Sex', 'field' => 'sex.field_sex_value','sort' => 'ASC'),
+    array('data' => 'First Name', 'field' => 'fn.field_first_name_value', 'sort' => 'ASC'),
+    array('data' => 'Last Name', 'field' => 'field_last_name_value', 'sort' => 'ASC'),
+    array('data' => 'Sex', 'field' => 'sex.field_sex_value', 'sort' => 'ASC'),
     'View all Movies',
     'View all Songs'
   );
 
   //$users = entity_load('user');
-  
   $userdata = array();
 
   //Custom Query 
+ /* SELECT count( n.uid ) AS counts, n.nid, first_name.field_first_name_value, last_name.field_last_name_value, sex.field_sex_value, u.uid
+FROM users AS u
+LEFT JOIN node AS n ON ( u.uid = n.uid )
+AND (
+n.type = 'movie_information'
+)
+JOIN field_data_field_first_name AS first_name ON ( u.uid = first_name.entity_id )
+JOIN field_data_field_last_name AS last_name ON ( u.uid = last_name.entity_id )
+JOIN field_data_field_sex AS sex ON ( u.uid = sex.entity_id )
+GROUP BY u.uid
+ORDER BY counts DESC */
 
   $query = db_select('users','u')->extend('TableSort');
-    $query->join('field_data_field_first_name', 'fn', 'u.uid = fn.entity_id');
-    $query->join('field_data_field_last_name', 'ln', 'u.uid = ln.entity_id');
-    $query->join('field_data_field_sex', 'sex', 'u.uid = sex.entity_id');
-    $query->fields('fn',array('field_first_name_value'));
-    $query->fields('ln',array('field_last_name_value'));
-    $query->fields('u',array('uid'));
-    $query->fields('sex',array('field_sex_value'));
-    $query->condition('u.uid', 0,'!=');
-    $query->condition('u.uid', 1,'!=');
+  $query->leftJoin('node', 'n', '(u.uid = n.uid AND n.type = :bundle)', array(':bundle' => 'movie_information'));
+  $query->join('field_data_field_first_name', 'fn', 'u.uid = fn.entity_id');
+  $query->join('field_data_field_last_name', 'ln', 'u.uid = ln.entity_id');
+  $query->join('field_data_field_sex', 'sex', 'u.uid = sex.entity_id');
+  $query->fields('fn',array('field_first_name_value'));
+  $query->fields('ln',array('field_last_name_value'));
+  $query->fields('u',array('uid'));
+  $query->fields('n',array('uid'));
+  $query->fields('sex',array('field_sex_value'));
+  $query->condition('u.uid', 0, '!=');
+  $query->condition('u.uid', 1, '!=');
 
-    if (isset($first_name) || isset($last_name) ) {
-      $query->condition('fn.field_first_name_value', '%' . db_like($first_name) . '%', 'LIKE');
-      $query->condition('ln.field_last_name_value', '%' . db_like($last_name) . '%', 'LIKE');
-      $query->condition('sex.field_sex_value', $sex,'=');
-  
-    }
+  if ((isset($first_name) && !empty($first_name)) || (isset($last_name) && !empty($last_name) )) {
+    $query->condition('fn.field_first_name_value', '%' . db_like($first_name) . '%', 'LIKE');
+    $query->condition('ln.field_last_name_value', '%' . db_like($last_name) . '%', 'LIKE');
+    $query->condition('sex.field_sex_value', $sex, '=');
+  } 
+
+  if (empty($_GET['sort'])) {
+    $query->addExpression('COUNT(n.uid)', 'counts');
+    $query->groupBy('u.uid');
+    $query->orderBy('counts', 'DESC');
+  }
     
-    // $query->orderBy('fn.field_first_name_value', 'ASC');//ORDER BY created
-    // $query->orderBy('ln.field_last_name_value', 'ASC');//ORDER BY created
-    // $query->orderBy('sex.field_sex_value', 'ASC');//ORDER BY created
-    $result = $query->extend('PagerDefault')
-              ->limit(10)
-              ->orderByHeader($header)
-              ->execute()
-              ->fetchAll();
+  $result = $query->extend('PagerDefault')
+    ->limit(10)
+    ->orderByHeader($header)
+    ->execute()
+    ->fetchAll();
 
   foreach ($result as $row) {
     $user_load = user_load($row->uid);
     $userdata[$row->uid] = array(
-        $i,
-        $row->field_first_name_value,
-        $row->field_last_name_value,
-        $row->field_sex_value,
-        users_rolewise_link($user_load, 'members-movies'),
-        users_rolewise_link($user_load, 'members-songs'),
-      );
+      $i,
+      $row->field_first_name_value,
+      $row->field_last_name_value,
+      $row->field_sex_value,
+      users_rolewise_link($user_load, 'members-movies'),
+      users_rolewise_link($user_load, 'members-songs'),
+    );
     $i++;
   }
- 
-
   // ignore uid 0 and 1.
   //$ignore_uid = array(0, 1);
   /*
@@ -171,11 +183,6 @@ function active_users_list() {
     '#rows' => $userdata,
     '#empty' => t('No Records.'),
   );
-  /*$output = theme('table', array(
-    'header' => $header,
-    'rows' => $userdata,
-    )
-  );*/
 
   return $form;
 }
@@ -209,7 +216,6 @@ function member_movies_list() {
 
   // Query Build
   $result = custom_query_build('movie_information');
-
   $rows = array();
   if (isset($result['node'])) {
     $i = 1;
@@ -218,26 +224,31 @@ function member_movies_list() {
     $nodes = node_load_multiple($nids);
 
     foreach ($nodes as $key => $value) {
+      $node_path = drupal_get_path_alias("node/$value->nid");
       $rows[$value->nid] = array(
         $i,
-        $value->title,
+        l($value->title,$node_path),
         field_key_check($value, 'field_movie_rates'),
         field_key_check($value, 'body'),
       );
+      $i++;
     }
-    $i++;
   }
 
   // Table Header. 
   $header = array(
     'S/No',
-    array('data' => 'Movie name ','field' => 'field_first_name','sort' => 'ASC'),
-    array('data' => 'Movie Rates ','field' => 'field_last_name','sort' => 'ASC'),
-    array('data' => 'Description ', 'field' => 'field_sex','sort' => 'ASC'),
+    array('data' => 'Movie name' , 'field' => 'field_first_name', 'sort' => 'ASC'),
+    array('data' => 'Movie Rates' ,'field' => 'field_last_name', 'sort' => 'ASC'),
+    array('data' => 'Description' , 'field' => 'field_sex', 'sort' => 'ASC'),
   );
 
   if (empty($rows)) {
-    $rows = array('empty'=>array('Sorry No Result Found'));
+    $rows = array(
+      'empty' => array(
+        'Sorry No Result Found',
+      ),
+    );
   }
 
   $output = theme('table', array(
@@ -272,19 +283,22 @@ function member_songs_list() {
       $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
       $movies_object = node_load($movies_nid);
 
+      //get node path alias.
+      $movies_node_path = drupal_get_path_alias("node/$movies_object->nid");
+      $songs_node_path = drupal_get_path_alias("node/$value->nid");
+
       $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
         'label'=>'hidden',));
       
       $rows[$value->nid] = array(
         $i,
-        $movies_object->title,
-        $value->title,
+        l($movies_object->title,$movies_node_path),
+        l($value->title,$songs_node_path),
         field_key_check($movies_object, 'field_movie_rates'),
         render($fivestar),
       );
-     //drupal_set_message('<pre>'.print_r($fivestar,TRUE));
+     $i++;
     }
-    $i++;
   }
 
   // Table Header. 
@@ -300,7 +314,7 @@ function member_songs_list() {
     $rows = array(
       'empty' => array(
         'Sorry No Result Found',
-      )
+      ),
     );
   }
 
@@ -361,7 +375,6 @@ function custom_query_build($bundle_name) {
         ->fieldCondition('field_director', 'uid', $user_uid, '=')
         ->execute();
       break;
-    
   }
 
   return $result;
