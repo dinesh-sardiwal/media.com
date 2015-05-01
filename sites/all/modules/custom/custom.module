@@ -105,11 +105,17 @@ ORDER BY counts DESC */
   $query->condition('u.uid', 0, '!=');
   $query->condition('u.uid', 1, '!=');
 
-  if ((isset($first_name) && !empty($first_name)) || (isset($last_name) && !empty($last_name) )) {
+  if (isset($first_name) && !empty($first_name)) {
     $query->condition('fn.field_first_name_value', '%' . db_like($first_name) . '%', 'LIKE');
-    $query->condition('ln.field_last_name_value', '%' . db_like($last_name) . '%', 'LIKE');
-    $query->condition('sex.field_sex_value', $sex, '=');
   } 
+
+  if (isset($last_name) && !empty($last_name)) {
+    $query->condition('ln.field_last_name_value', '%' . db_like($last_name) . '%', 'LIKE');
+  }
+
+  if (isset($sex) && !empty($sex)) {
+    $query->condition('sex.field_sex_value', $sex, '=');
+  }
 
   if (empty($_GET['sort'])) {
     $query->addExpression('COUNT(n.uid)', 'counts');
@@ -118,7 +124,7 @@ ORDER BY counts DESC */
   }
     
   $result = $query->extend('PagerDefault')
-    ->limit(10)
+    ->limit(5)
     ->orderByHeader($header)
     ->execute()
     ->fetchAll();
@@ -156,19 +162,20 @@ ORDER BY counts DESC */
   $form['first_name'] = array(
     '#type' => 'textfield',
     '#title' => t('First Name'),
-    '#default_value' => '',
+    '#default_value' => isset($first_name) ? $first_name : '',
   );
 
   $form['last_name'] = array(
     '#type' => 'textfield',
     '#title' => t('Last Name'),
-    '#default_value' => '',
+    '#default_value' => isset($last_name) ? $last_name : '',
   );
 
   $form['sex'] = array(
     '#type' => 'select',
     '#title' => t('Sex'),
     '#options' => $sex_options_values,
+    '#default_value' => isset($sex) ? $sex : '',
   );
 
   $form['submit'] = array(
@@ -184,6 +191,9 @@ ORDER BY counts DESC */
     '#empty' => t('No Records.'),
   );
 
+  $form['pager'] = array(
+    '#theme' => 'pager',
+  );
   return $form;
 }
 
@@ -258,7 +268,6 @@ function member_movies_list() {
   );
 
   return $output;
-
 }
 
 /**
@@ -377,6 +386,7 @@ function custom_query_build($bundle_name) {
       break;
   }
 
+  
   return $result;
 }
 
@@ -517,21 +527,32 @@ function custom_media_details() {
     '#type' => 'textfield',
     '#title' => t('Song Name'),
     '#default_value' => '',
-    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();')
+    '#ajax' => array(
+      'callback' => 'custom_media_details_submit',
+      'wrapper' => 'replace_textfield_div',
+     ),
   );
 
   $form['movies'] = array(
     '#type' => 'select',
     '#title' => t('Movies'),
     '#options' => $movies_array,
-    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
+    //'#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
+    '#ajax' => array(
+      'callback' => 'custom_media_details_submit',
+      'wrapper' => 'replace_textfield_div',
+     ),
   );
 
   $form['fivestar'] = array(
     '#type' => 'textfield',
     '#title' => t('Five star rating'),
     '#default_value' => '',
-    '#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
+    //'#attributes' => array('onChange' => 'document.getElementById("custom-media-details").submit();'),
+    '#ajax' => array(
+      'callback' => 'custom_media_details_submit',
+      'wrapper' => 'replace_textfield_div',
+     ),
   );
 
   $form['submit'] = array(
@@ -542,6 +563,8 @@ function custom_media_details() {
 
   $form['table'] = array(
     '#theme' => 'table',
+    '#prefix' => '<div id="replace_textfield_div">',
+    '#suffix' => '</div>',
     '#title' => t('Media Details'),
     '#header' => $header,
     '#rows' => $rows,
@@ -560,14 +583,52 @@ function custom_media_details_submit($form, &$form_state) {
   $movies_nid = $values['movies'];
   $fivestar_rating = $values['fivestar'];
 
-  $form_state['redirect'] = array(
-    'media-detail',
-    array(
-      'query' => array(
-        'song_name' => $song_name,
-        'movies_value_nid' => $movies_nid,
-        'fivestar_rating' => $fivestar_rating,
-      ),
-    ),
-  );
+  $rows = array();
+  $query = new EntityFieldQuery;
+  $result = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'songs_information');
+
+  if (!empty($movies_nid)) {
+    $query->fieldCondition('field_movies', 'nid', $movies_nid);
+  }
+
+  if (!empty($song_name)) {
+    $query->propertyCondition('title', '%'. $song_name . '%', 'LIKE');
+  }
+
+  if (!empty($fivestar_rating)) {
+    $query->fieldCondition('field_five_star_rating', 'rating', $fivestar_rating);
+  }
+
+  //$query->tableSort($header);
+  $result = $result->execute();
+
+  if (!empty($result)) {
+    $nids = array_keys($result['node']);
+    $nodes = node_load_multiple($nids);
+    foreach ($nodes as $key => $value) {
+
+      $movies_nid = $value->field_movies ? $value->field_movies['und'][0]['nid'] : '';
+      $movies_object = node_load($movies_nid);
+      $fivestar = field_view_field('node', $value, 'field_five_star_rating',array(
+      'label'=>'hidden',));
+
+      $rows[$value->nid] = array(
+        $i,
+        $value->title,
+        $movies_object->title,
+        field_key_check($movies_object, 'body'),
+        render($fivestar),
+      );
+      $i++;
+    }
+  }
+
+  if (empty($rows)) {
+    $rows = array('empty'=>array('Sorry No Result Found'));
+  }
+
+  $form['table']['#rows'] = $rows ;
+
+  return $form['table'];
 }
